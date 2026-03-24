@@ -49,7 +49,7 @@ CodeChef Profiler is a web application that:
 
 Check out the live deployment of the application:
 
-* **Frontend (Vercel):** [https://codechef-scraper-jet.vercel.app/](https://codechef-scraper-jet.vercel.app/) *(Replace with your actual Vercel link)*
+* **Frontend (Vercel):** [https://codechef-scraper-jet.vercel.app/](https://codechef-scraper-jet.vercel.app/)
 * **Backend (Render):** [https://codechef-scraper-api-1gz6.onrender.com](https://codechef-scraper-api-1gz6.onrender.com)
 
 ---
