@@ -1,0 +1,509 @@
+const express = require('express');
+const axios = require('axios');
+const cheerio = require('cheerio');
+const cors = require('cors');
+const xlsx = require('xlsx');
+const multer = require('multer');
+
+const app = express();
+app.use(cors({ origin: '*' }));
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB max
+const jobs = new Map();
+
+// Auto-cleanup completed jobs after 10 minutes to prevent memory leaks
+setInterval(() => {
+    const now = Date.now();
+    for (const [jobId, job] of jobs.entries()) {
+        if ((job.status === 'completed' || job.status === 'error') && now - parseInt(jobId) > 10 * 60 * 1000) {
+            jobs.delete(jobId);
+        }
+    }
+}, 60 * 1000);
+
+// In-memory cache (5 minutes)
+const cache = new Map();
+const CACHE_DURATION = 5 * 60 * 1000;
+
+// Known country demonyms → country name mappings for cleaning
+const COUNTRY_FIXES = {
+    'indian': 'India', 'chinese': 'China', 'american': 'United States',
+    'russian': 'Russia', 'japanese': 'Japan', 'korean': 'South Korea',
+    'brazilian': 'Brazil', 'canadian': 'Canada', 'german': 'Germany',
+    'french': 'France', 'british': 'United Kingdom', 'australian': 'Australia',
+    'bangladeshi': 'Bangladesh', 'pakistani': 'Pakistan', 'sri lankan': 'Sri Lanka',
+    'nepali': 'Nepal', 'indonesian': 'Indonesia', 'vietnamese': 'Vietnam',
+};
+
+function cleanProfileData(raw) {
+    // --- Stars: extract number from combined text like "2★1446" or "2★ 1446 (-11)" ---
+    let stars = 'N/A';
+    let rating = 'N/A';
+    const rawStars = (raw.stars || '').toString();
+    if (rawStars.includes('★')) {
+        const parts = rawStars.split('★');
+        const parsed = parseInt(parts[0].trim());
+        if (!isNaN(parsed)) stars = parsed;
+    } else if (rawStars !== 'Unrated' && rawStars !== '') {
+        const parsed = parseInt(rawStars);
+        if (!isNaN(parsed)) stars = parsed;
+    }
+
+    // --- Rating: prefer dedicated rating field, then extract from stars text ---
+    const rawRating = (raw.rating || '').toString().trim();
+    const ratingNum = parseInt(rawRating);
+    if (!isNaN(ratingNum)) {
+        rating = ratingNum;
+    } else if (rawStars.includes('★')) {
+        const afterStar = rawStars.split('★')[1] || '';
+        const rNum = parseInt(afterStar.trim().split(/\s/)[0]);
+        if (!isNaN(rNum)) rating = rNum;
+    }
+
+    // --- Ranks: ensure numbers ---
+    const toNum = (v) => {
+        if (v === 'NA' || v === 'N/A' || !v) return 'N/A';
+        const n = parseInt(v.toString().replace(/,/g, ''));
+        return isNaN(n) ? 'N/A' : n;
+    };
+
+    // --- Country: fix duplicated demonym prefix like "IndianIndia" ---
+    let country = (raw.country || 'N/A').toString().trim();
+    if (country && country !== 'NA' && country !== 'N/A') {
+        const lower = country.toLowerCase();
+        for (const [demonym, name] of Object.entries(COUNTRY_FIXES)) {
+            if (lower.startsWith(demonym) && lower !== demonym) {
+                country = country.substring(demonym.length).trim() || name;
+                break;
+            }
+        }
+    }
+    if (!country || country === 'NA') country = 'N/A';
+
+    return {
+        username: raw.username || 'N/A',
+        rating,
+        stars,
+        division: raw.division || 'N/A',
+        globalRank: toNum(raw.globalRank),
+        countryRank: toNum(raw.countryRank),
+        highestRating: toNum(raw.highestRating),
+        country,
+        institution: raw.institution && raw.institution !== 'NA' ? raw.institution : 'N/A'
+    };
+}
+
+async function scrapeCodeChefProfile(username) {
+    const maxRetries = 2;
+    let attempt = 0;
+    
+    while(attempt <= maxRetries) {
+        try {
+            const url = `https://www.codechef.com/users/${username}`;
+            const response = await axios.get(url, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                },
+                timeout: 15000 
+            });
+
+            const html = response.data;
+            const $ = cheerio.load(html);
+
+            const rating = $('.rating-number').text().trim();
+            if (!rating) {
+                throw Object.assign(new Error('User not found or profile is hidden'), { status: 404 });
+            }
+
+            const stars = $('.rating').text().trim() || 'Unrated';
+            let globalRank = 'NA';
+            let countryRank = 'NA';
+            
+            $('.rating-ranks ul li').each((i, el) => {
+                const text = $(el).text();
+                if (text.includes('Global Rank')) {
+                    globalRank = $(el).find('a').text().trim() || $(el).find('strong').text().trim() || text.replace('Global Rank', '').trim();
+                } else if (text.includes('Country Rank')) {
+                    countryRank = $(el).find('a').text().trim() || $(el).find('strong').text().trim() || text.replace('Country Rank', '').trim();
+                }
+            });
+
+            let highestRating = 'NA';
+            const highestRatingText = $('.rating-header').text();
+            const highestMatch = highestRatingText.match(/Highest Rating\s*(\d+)/i);
+            if (highestMatch && highestMatch[1]) {
+                highestRating = highestMatch[1];
+            } else {
+                let textRaw = $('.rating-header small').text();
+                let nums = textRaw.match(/\d+/g);
+                if (nums && nums.length > 0) highestRating = nums[0];
+            }
+            
+            let country = 'NA';
+            let institution = 'NA';
+
+            $('.user-details li').each((i, el) => {
+                const label = $(el).find('label').text().trim();
+                const value = $(el).find('span').text().trim();
+                if (label.includes('Country:')) {
+                    country = value;
+                } else if (label.includes('Institution:')) {
+                    institution = value;
+                }
+            });
+            
+            let division = 'Div ?'; 
+            const divMatch = highestRatingText.match(/(Div\s*\d)/i);
+            if (divMatch && divMatch[1]) {
+                division = divMatch[1];
+            } else {
+                const innerDiv = $('.rating-header .rating-star').next('div').text() || '';
+                const m2 = innerDiv.match(/(Div\s*\d)/i);
+                if (m2 && m2[1]) division = m2[1];
+            }
+
+            return cleanProfileData({
+                username,
+                rating,
+                stars,
+                division,
+                globalRank,
+                countryRank,
+                highestRating,
+                country,
+                institution
+            });
+        } catch (error) {
+            console.error(`Attempt ${attempt + 1} failed:`, error.message);
+            if (error.response && error.response.status === 404) {
+                throw Object.assign(new Error('User not found'), { status: 404 });
+            }
+            if (error.status === 404) {
+                throw error;
+            }
+            if (attempt === maxRetries) {
+                if (error.code === 'ECONNABORTED') {
+                    throw Object.assign(new Error('Request to CodeChef timed out after retries'), { status: 504 });
+                }
+                throw Object.assign(new Error('Failed to fetch profile data. Service might be temporarily blocked.'), { status: 500 });
+            }
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            attempt++;
+        }
+    }
+}
+
+app.get('/api/codechef/:username', async (req, res) => {
+    const { username } = req.params;
+    if (!username) return res.status(400).json({ error: 'Username is required' });
+
+    if (cache.has(username)) {
+        const cachedData = cache.get(username);
+        if (Date.now() - cachedData.timestamp < CACHE_DURATION) {
+            return res.json(cachedData.data);
+        } else {
+            cache.delete(username);
+        }
+    }
+
+    try {
+        const profileData = await scrapeCodeChefProfile(username);
+        cache.set(username, { data: profileData, timestamp: Date.now() });
+        res.json(profileData);
+    } catch (error) {
+        const status = error.status || 500;
+        res.status(status).json({ error: error.message });
+    }
+});
+
+app.get('/api/codechef/:username/excel', async (req, res) => {
+    const { username } = req.params;
+    if (!username) return res.status(400).json({ error: 'Username is required' });
+
+    try {
+        let profileData;
+        if (cache.has(username) && Date.now() - cache.get(username).timestamp < CACHE_DURATION) {
+            profileData = cache.get(username).data;
+        } else {
+            profileData = await scrapeCodeChefProfile(username);
+            cache.set(username, { data: profileData, timestamp: Date.now() });
+        }
+
+        const wb = xlsx.utils.book_new();
+        // Capitalize keys for Excel header
+        const formattedData = [{
+            "Username": profileData.username,
+            "Rating": profileData.rating,
+            "Stars": profileData.stars,
+            "Division": profileData.division,
+            "Global Rank": profileData.globalRank,
+            "Country Rank": profileData.countryRank,
+            "Highest Rating": profileData.highestRating,
+            "Country": profileData.country,
+            "Institution": profileData.institution
+        }];
+        const ws = xlsx.utils.json_to_sheet(formattedData);
+        xlsx.utils.book_append_sheet(wb, ws, "Profile Data");
+
+        const excelBuffer = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
+        
+        res.setHeader('Content-Disposition', `attachment; filename="${username}_codechef_profile.xlsx"`);
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.send(excelBuffer);
+    } catch (error) {
+        const status = error.status || 500;
+        res.status(status).json({ error: error.message });
+    }
+});
+
+// Preview endpoint: returns sheet names and column headers for dynamic selection
+app.post('/api/codechef/bulk-excel/preview', upload.single('file'), async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+    try {
+        const wb = xlsx.read(req.file.buffer, { type: 'buffer' });
+        const sheets = wb.SheetNames.map(name => {
+            const ws = wb.Sheets[name];
+            const rows = xlsx.utils.sheet_to_json(ws, { defval: '' });
+            const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
+            return { name, columns, rowCount: rows.length };
+        });
+
+        if (sheets.length === 0) return res.status(400).json({ error: 'Excel file has no sheets' });
+        res.json({ sheets });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to read Excel file' });
+    }
+});
+
+app.post('/api/codechef/bulk-excel', upload.single('file'), async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    
+    try {
+        const wb = xlsx.read(req.file.buffer, { type: 'buffer' });
+        const selectedSheet = req.body?.sheetName || null;
+        const selectedColumn = req.body?.usernameColumn || null;
+
+        // Determine which sheets to process
+        const sheetNames = selectedSheet ? [selectedSheet] : wb.SheetNames;
+        const sheetDataList = [];
+        let totalUsernames = 0;
+
+        for (const sheetName of sheetNames) {
+            const ws = wb.Sheets[sheetName];
+            if (!ws) continue;
+            const rows = xlsx.utils.sheet_to_json(ws, { defval: '' });
+            if (rows.length === 0) continue;
+
+            const keys = Object.keys(rows[0]);
+            const usernameKey = selectedColumn
+                ? keys.find(k => k === selectedColumn)
+                : keys.find(k => k.toLowerCase() === 'username');
+
+            if (!usernameKey) continue;
+
+            const validCount = rows.filter(r => r[usernameKey] && r[usernameKey].toString().trim() !== '').length;
+            totalUsernames += validCount;
+            sheetDataList.push({ sheetName, rows, usernameKey });
+        }
+
+        if (sheetDataList.length === 0) {
+            return res.status(400).json({ error: 'No sheet with a valid username column found' });
+        }
+        if (totalUsernames === 0) {
+            return res.status(400).json({ error: 'No valid usernames found' });
+        }
+
+        const jobId = Date.now().toString();
+        jobs.set(jobId, {
+            status: 'processing',
+            total: totalUsernames,
+            processed: 0,
+            sheetDataList,
+            results: [],  // will hold { sheetName, rows } entries
+            excelBuffer: null
+        });
+
+        // Trigger background processing
+        processBulkExcel(jobId);
+
+        res.json({ jobId, total: totalUsernames });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to process Excel file' });
+    }
+});
+
+async function processBulkExcel(jobId) {
+    const job = jobs.get(jobId);
+    if (!job) return;
+
+    const completedSheets = [];
+
+    for (const sheetData of job.sheetDataList) {
+        const updatedRows = [];
+
+        for (const row of sheetData.rows) {
+            const username = row[sheetData.usernameKey]?.toString().trim();
+            if (!username) {
+                updatedRows.push(row);
+                continue;
+            }
+
+            console.log('[Bulk] Processing:', username);
+
+            try {
+                let profileData;
+                if (cache.has(username) && Date.now() - cache.get(username).timestamp < CACHE_DURATION) {
+                    profileData = cache.get(username).data;
+                } else {
+                    profileData = await scrapeCodeChefProfile(username);
+                    cache.set(username, { data: profileData, timestamp: Date.now() });
+                    // Delay 500-1000ms to avoid rate limiting
+                    await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 500));
+                }
+
+                console.log('[Bulk] Scraped data for', username, ':', JSON.stringify(profileData));
+
+                // Use camelCase keys (matching scraper output) for JSON consistency
+                updatedRows.push({
+                    ...row,
+                    username: profileData.username,
+                    rating: profileData.rating,
+                    stars: profileData.stars,
+                    division: profileData.division,
+                    globalRank: profileData.globalRank,
+                    countryRank: profileData.countryRank,
+                    highestRating: profileData.highestRating,
+                    country: profileData.country,
+                    institution: profileData.institution
+                });
+            } catch (error) {
+                console.error('[Bulk] Failed for', username, ':', error.message);
+                updatedRows.push({
+                    ...row,
+                    username,
+                    rating: 'N/A',
+                    stars: 'N/A',
+                    division: 'N/A',
+                    globalRank: 'N/A',
+                    countryRank: 'N/A',
+                    highestRating: 'N/A',
+                    country: 'N/A',
+                    institution: 'N/A'
+                });
+            }
+
+            job.processed++;
+        }
+
+        completedSheets.push({ sheetName: sheetData.sheetName, rows: updatedRows });
+    }
+
+    // Format rows with capitalized headers for the Excel download only
+    const formatRowForExcel = (row) => ({
+        "Username": row.username ?? row[Object.keys(row).find(k => k.toLowerCase() === 'username')] ?? '',
+        "Rating": row.rating ?? 'N/A',
+        "Stars": row.stars ?? 'N/A',
+        "Division": row.division ?? 'N/A',
+        "Global Rank": row.globalRank ?? 'N/A',
+        "Country Rank": row.countryRank ?? 'N/A',
+        "Highest Rating": row.highestRating ?? 'N/A',
+        "Country": row.country ?? 'N/A',
+        "Institution": row.institution ?? 'N/A'
+    });
+
+    try {
+        const wb = xlsx.utils.book_new();
+        for (const sheet of completedSheets) {
+            const excelRows = sheet.rows.map(formatRowForExcel);
+            const ws = xlsx.utils.json_to_sheet(excelRows);
+            xlsx.utils.book_append_sheet(wb, ws, sheet.sheetName);
+        }
+        const excelBuffer = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+        job.excelBuffer = excelBuffer;
+        job.completedSheets = completedSheets; // camelCase rows for JSON preview
+        job.status = 'completed';
+        console.log('[Bulk] Job', jobId, 'completed successfully');
+    } catch (err) {
+        console.error('[Bulk] Excel generation error:', err.message);
+        job.status = 'error';
+    }
+}
+
+// Preview endpoint: returns processed data as JSON for table preview
+app.get('/api/codechef/job/:jobId/data', (req, res) => {
+    const { jobId } = req.params;
+    const job = jobs.get(jobId);
+
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (job.status !== 'completed' || !job.completedSheets) {
+        return res.status(400).json({ error: 'Job not yet completed' });
+    }
+
+    // Flatten all sheets into a single array for table preview
+    const rows = job.completedSheets.flatMap(s => s.rows);
+    res.json({ rows, total: rows.length });
+});
+
+app.get('/api/codechef/job/:jobId/progress', (req, res) => {
+    const { jobId } = req.params;
+    const job = jobs.get(jobId);
+    
+    if (!job) {
+        return res.status(404).json({ error: 'Job not found' });
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    
+    if (res.flushHeaders) res.flushHeaders();
+
+    const sendProgress = () => {
+        res.write(`data: ${JSON.stringify({ status: job.status, processed: job.processed, total: job.total })}\n\n`);
+    };
+
+    sendProgress();
+
+    const intervalId = setInterval(() => {
+        const currentJob = jobs.get(jobId);
+        if (!currentJob) {
+            clearInterval(intervalId);
+            res.end();
+            return;
+        }
+
+        res.write(`data: ${JSON.stringify({ status: currentJob.status, processed: currentJob.processed, total: currentJob.total })}\n\n`);
+
+        if (currentJob.status === 'completed' || currentJob.status === 'error') {
+            clearInterval(intervalId);
+            res.end();
+        }
+    }, 1000);
+
+    req.on('close', () => clearInterval(intervalId));
+});
+
+app.get('/api/codechef/job/:jobId/download', (req, res) => {
+    const { jobId } = req.params;
+    const job = jobs.get(jobId);
+
+    if (!job || job.status !== 'completed' || !job.excelBuffer) {
+        return res.status(400).json({ error: 'Job not completed or found' });
+    }
+
+    res.setHeader('Content-Disposition', `attachment; filename="updated_codechef_profiles.xlsx"`);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(job.excelBuffer);
+
+    // Free memory after download — keep completedSheets for preview but release the buffer
+    job.excelBuffer = null;
+});
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+});
+
+module.exports = app;
