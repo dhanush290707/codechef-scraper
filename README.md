@@ -30,6 +30,14 @@ CodeChef Profiler is a web application that:
 
 ---
 
+## 📁 Project Structure
+
+client/ → React frontend  
+server/ → Express backend  
+screenshots/ → UI previews 
+
+---
+
 ## 🛠️ Tech Stack
 
 ### Frontend
