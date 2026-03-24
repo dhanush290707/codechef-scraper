@@ -54,6 +54,19 @@ Check out the live deployment of the application:
 
 ---
 
+## 📸 Screenshots
+
+### 🏠 Home Screen
+![Home](./screenshots/HomeScreen.png)
+
+### 📊 Table Preview
+![Table](./screenshots/table.png)
+
+### 📄 Excel Output
+![Excel](./screenshots/excel.png)
+
+---
+
 ## 📦 Installation
 
 To run this project locally, follow these steps:
