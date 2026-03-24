@@ -258,6 +258,7 @@ app.get('/api/codechef/:username/excel', async (req, res) => {
 
 // Preview endpoint: returns sheet names and column headers for dynamic selection
 app.post('/api/codechef/bulk-excel/preview', upload.single('file'), async (req, res) => {
+    console.log('[Bulk] Received preview file:', req.file ? req.file.originalname : null);
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
     try {
@@ -277,6 +278,7 @@ app.post('/api/codechef/bulk-excel/preview', upload.single('file'), async (req, 
 });
 
 app.post('/api/codechef/bulk-excel', upload.single('file'), async (req, res) => {
+    console.log('[Bulk] Received processing file:', req.file ? req.file.originalname : null);
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     
     try {

@@ -2,9 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
 import { Search, Trophy, Globe, MapPin, Building, History, Moon, Sun, Download, Upload, FileSpreadsheet, ChevronDown, ChevronUp, X, Filter } from 'lucide-react';
 import './index.css';
-
-// In dev: empty string (uses Vite proxy). In production: set VITE_API_URL to your Render backend URL.
-const API_BASE = import.meta.env.VITE_API_URL || '';
+import { API_BASE_URL as API_BASE } from './config';
 
 const TABLE_COLUMNS = [
   { key: 'username', label: 'Username', type: 'string' },
@@ -230,9 +228,7 @@ function App() {
     formData.append('file', file);
 
     try {
-      const { data } = await axios.post(`${API_BASE}/api/codechef/bulk-excel/preview`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      const { data } = await axios.post(`${API_BASE}/api/codechef/bulk-excel/preview`, formData);
 
       setPreviewSheets(data.sheets);
       if (data.sheets.length > 0) {
@@ -306,9 +302,7 @@ function App() {
     formData.append('usernameColumn', selectedColumn);
 
     try {
-      const { data } = await axios.post(`${API_BASE}/api/codechef/bulk-excel`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      const { data } = await axios.post(`${API_BASE}/api/codechef/bulk-excel`, formData);
       
       const jobId = data.jobId;
       setBulkJobId(jobId);
