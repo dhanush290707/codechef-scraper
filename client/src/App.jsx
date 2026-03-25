@@ -80,8 +80,8 @@ function ProfileGrid({ data, title }) {
 
       <div className="card-grid">
         {filtered.map((row, i) => {
-          const starCount = typeof row.stars === 'number' ? row.stars : 0;
-          const starColor = getStarColor(row.stars);
+          const starCount = parseInt(row.stars) || 0;
+          const starColor = getStarColor(starCount);
           return (
             <div
               key={i}
@@ -110,8 +110,8 @@ function ProfileGrid({ data, title }) {
             </button>
 
             <div className="modal-header">
-              <div className="modal-stars" style={{ color: getStarColor(selectedUser.stars) }}>
-                {typeof selectedUser.stars === 'number' ? '★'.repeat(selectedUser.stars) : '☆'}
+              <div className="modal-stars" style={{ color: getStarColor(parseInt(selectedUser.stars) || 0) }}>
+                {(parseInt(selectedUser.stars) || 0) > 0 ? '★'.repeat(parseInt(selectedUser.stars)) : '☆'}
               </div>
               <h2 className="modal-username">{selectedUser.username}</h2>
               <span className="modal-division-badge">{selectedUser.division ?? 'N/A'}</span>
