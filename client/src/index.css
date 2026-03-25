@@ -606,16 +606,7 @@ body.dark .success-toast {
   }
 }
 
-/* ── Data Table ── */
-.data-table-section {
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 1.5rem;
-  margin-bottom: 2rem;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.06);
-}
-
+/* ── Shared Controls ── */
 .table-title {
   font-size: 1rem;
   font-weight: 600;
@@ -671,85 +662,6 @@ body.dark .success-toast {
   white-space: nowrap;
 }
 
-.table-scroll {
-  overflow-x: auto;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-}
-
-.data-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.8rem;
-  min-width: 700px;
-}
-
-.data-table th,
-.data-table td {
-  padding: 0.6rem 0.75rem;
-  text-align: left;
-  border-bottom: 1px solid var(--border);
-  white-space: nowrap;
-}
-
-.data-table th {
-  background: var(--bg-color);
-  font-weight: 600;
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-  position: sticky;
-  top: 0;
-  z-index: 1;
-}
-
-.sortable-th {
-  cursor: pointer;
-  user-select: none;
-  transition: color 0.15s;
-}
-
-.th-content {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-}
-
-.sortable-th:hover {
-  color: var(--primary);
-}
-
-.data-table tbody tr:nth-child(even) {
-  background: rgba(0, 0, 0, 0.02);
-}
-
-body.dark .data-table tbody tr:nth-child(even) {
-  background: rgba(255, 255, 255, 0.02);
-}
-
-.data-table tbody tr:hover {
-  background: rgba(59, 130, 246, 0.06);
-}
-
-.data-table tbody tr:last-child td {
-  border-bottom: none;
-}
-
-.num-cell {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-.top-rating-row {
-  background: rgba(251, 191, 36, 0.08) !important;
-}
-
-.top-rating-row td:nth-child(2) {
-  color: #f59e0b;
-  font-weight: 700;
-}
-
 /* Download button for bulk */
 .bulk-complete-section {
   display: flex;
@@ -779,15 +691,6 @@ body.dark .data-table tbody tr:nth-child(even) {
   box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
 }
 
-.table-scroll::-webkit-scrollbar {
-  height: 6px;
-}
-
-.table-scroll::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 3px;
-}
-
 @media (max-width: 480px) {
   .table-controls {
     flex-direction: column;
@@ -797,3 +700,202 @@ body.dark .data-table tbody tr:nth-child(even) {
     max-width: none;
   }
 }
+
+/* ── Profile Card Grid ── */
+.profile-grid-section {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.06);
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.75rem;
+}
+
+.user-card {
+  background: var(--bg-color);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem 0.75rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.user-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.15);
+  border-color: var(--primary);
+}
+
+.user-card-stars {
+  font-size: 1.1rem;
+  letter-spacing: 1px;
+  line-height: 1;
+}
+
+.user-card-name {
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: var(--text-main);
+  word-break: break-all;
+  line-height: 1.2;
+}
+
+.user-card-rating {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--text-main);
+  font-variant-numeric: tabular-nums;
+}
+
+.user-card-div {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+/* ── Modal Overlay ── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.modal-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 2rem;
+  width: 100%;
+  max-width: 480px;
+  position: relative;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+
+.modal-close {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: var(--bg-color);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: all 0.2s;
+}
+
+.modal-close:hover {
+  color: var(--error);
+  border-color: var(--error);
+}
+
+.modal-header {
+  text-align: center;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-stars {
+  font-size: 1.75rem;
+  letter-spacing: 2px;
+  margin-bottom: 0.25rem;
+}
+
+.modal-username {
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin: 0.25rem 0;
+}
+
+.modal-division-badge {
+  display: inline-block;
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+  padding: 0.2rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-top: 0.25rem;
+}
+
+.modal-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.modal-stat {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.75rem;
+  background: var(--bg-color);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
+.modal-stat-icon {
+  color: var(--primary);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.modal-stat-icon.rating-icon {
+  color: #fbbf24;
+}
+
+.modal-stat-label {
+  display: block;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.modal-stat-value {
+  display: block;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-top: 0.1rem;
+  word-break: break-word;
+}
+
+/* ── Responsive grid breakpoints ── */
+@media (max-width: 900px) {
+  .card-grid { grid-template-columns: repeat(4, 1fr); }
+}
+@media (max-width: 600px) {
+  .card-grid { grid-template-columns: repeat(3, 1fr); }
+  .modal-stats { grid-template-columns: 1fr; }
+}
+@media (max-width: 400px) {
+  .card-grid { grid-template-columns: repeat(2, 1fr); }
+}
+

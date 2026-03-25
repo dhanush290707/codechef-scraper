@@ -16,64 +16,58 @@ const TABLE_COLUMNS = [
   { key: 'institution', label: 'Institution', type: 'string' },
 ];
 
-function DataTable({ data, title }) {
-  const [sortKey, setSortKey] = useState(null);
-  const [sortDir, setSortDir] = useState('asc');
+// Star color based on CodeChef rating
+function getStarColor(stars) {
+  const n = typeof stars === 'number' ? stars : 0;
+  if (n >= 7) return '#e74c3c';   // red
+  if (n >= 6) return '#e67e22';   // orange
+  if (n >= 5) return '#9b59b6';   // purple
+  if (n >= 4) return '#3498db';   // blue
+  if (n >= 3) return '#2ecc71';   // green
+  if (n >= 2) return '#27ae60';   // dark green
+  if (n >= 1) return '#95a5a6';   // grey
+  return '#bdc3c7';
+}
+
+function ProfileGrid({ data, title }) {
   const [filterText, setFilterText] = useState('');
+  const [selectedUser, setSelectedUser] = useState(null);
 
-  const handleSort = (key) => {
-    if (sortKey === key) {
-      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortKey(key);
-      setSortDir('asc');
-    }
-  };
-
-  const sorted = useMemo(() => {
+  const filtered = useMemo(() => {
     let rows = [...data];
-    // Filter
     if (filterText.trim()) {
       const q = filterText.toLowerCase();
       rows = rows.filter(r =>
         TABLE_COLUMNS.some(c => String(r[c.key] ?? '').toLowerCase().includes(q))
       );
     }
-    // Sort
-    if (sortKey) {
-      const col = TABLE_COLUMNS.find(c => c.key === sortKey);
-      rows.sort((a, b) => {
-        let va = a[sortKey], vb = b[sortKey];
-        if (va === 'N/A') va = col.type === 'number' ? Infinity : 'zzz';
-        if (vb === 'N/A') vb = col.type === 'number' ? Infinity : 'zzz';
-        if (col.type === 'number') {
-          return sortDir === 'asc' ? va - vb : vb - va;
-        }
-        return sortDir === 'asc'
-          ? String(va).localeCompare(String(vb))
-          : String(vb).localeCompare(String(va));
-      });
-    }
+    // Sort by rating descending by default
+    rows.sort((a, b) => {
+      const ra = typeof a.rating === 'number' ? a.rating : -1;
+      const rb = typeof b.rating === 'number' ? b.rating : -1;
+      return rb - ra;
+    });
     return rows;
-  }, [data, sortKey, sortDir, filterText]);
+  }, [data, filterText]);
 
-  // Find max rating for highlighting
-  const maxRating = useMemo(() => {
-    const ratings = data.map(r => typeof r.rating === 'number' ? r.rating : 0);
-    return Math.max(...ratings, 0);
-  }, [data]);
+  // Close modal on ESC
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') setSelectedUser(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   if (!data || data.length === 0) return null;
 
   return (
-    <div className="data-table-section fade-in">
+    <div className="profile-grid-section fade-in">
       {title && <h3 className="table-title">{title}</h3>}
       <div className="table-controls">
         <div className="table-filter">
           <Filter size={14} />
           <input
             type="text"
-            placeholder="Search in table..."
+            placeholder="Search users..."
             value={filterText}
             onChange={e => setFilterText(e.target.value)}
           />
@@ -81,37 +75,95 @@ function DataTable({ data, title }) {
             <button className="filter-clear" onClick={() => setFilterText('')}><X size={12} /></button>
           )}
         </div>
-        <span className="table-count">{sorted.length} of {data.length} rows</span>
+        <span className="table-count">{filtered.length} of {data.length} users</span>
       </div>
-      <div className="table-scroll">
-        <table className="data-table">
-          <thead>
-            <tr>
-              {TABLE_COLUMNS.map(col => (
-                <th key={col.key} onClick={() => handleSort(col.key)} className="sortable-th">
-                  <span className="th-content">
-                    <span>{col.label}</span>
-                    {sortKey === col.key && (
-                      sortDir === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />
-                    )}
-                  </span>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map((row, i) => (
-              <tr key={i} className={typeof row.rating === 'number' && row.rating === maxRating && maxRating > 0 ? 'top-rating-row' : ''}>
-                {TABLE_COLUMNS.map(col => (
-                  <td key={col.key} className={col.type === 'number' ? 'num-cell' : ''}>
-                    {row[col.key] ?? 'N/A'}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+
+      <div className="card-grid">
+        {filtered.map((row, i) => {
+          const starCount = typeof row.stars === 'number' ? row.stars : 0;
+          const starColor = getStarColor(row.stars);
+          return (
+            <div
+              key={i}
+              className="user-card"
+              onClick={() => setSelectedUser(row)}
+            >
+              <div className="user-card-stars" style={{ color: starColor }}>
+                {starCount > 0 ? '★'.repeat(starCount) : '☆'}
+              </div>
+              <div className="user-card-name">{row.username ?? 'N/A'}</div>
+              <div className="user-card-rating">
+                {typeof row.rating === 'number' ? row.rating : 'N/A'}
+              </div>
+              <div className="user-card-div">{row.division ?? ''}</div>
+            </div>
+          );
+        })}
       </div>
+
+      {/* Drill-down Modal */}
+      {selectedUser && (
+        <div className="modal-overlay" onClick={() => setSelectedUser(null)}>
+          <div className="modal-card fade-in" onClick={e => e.stopPropagation()}>
+            <button className="modal-close" onClick={() => setSelectedUser(null)}>
+              <X size={18} />
+            </button>
+
+            <div className="modal-header">
+              <div className="modal-stars" style={{ color: getStarColor(selectedUser.stars) }}>
+                {typeof selectedUser.stars === 'number' ? '★'.repeat(selectedUser.stars) : '☆'}
+              </div>
+              <h2 className="modal-username">{selectedUser.username}</h2>
+              <span className="modal-division-badge">{selectedUser.division ?? 'N/A'}</span>
+            </div>
+
+            <div className="modal-stats">
+              <div className="modal-stat">
+                <Trophy size={18} className="modal-stat-icon rating-icon" />
+                <div>
+                  <span className="modal-stat-label">Current Rating</span>
+                  <span className="modal-stat-value">{selectedUser.rating ?? 'N/A'}</span>
+                </div>
+              </div>
+              <div className="modal-stat">
+                <Trophy size={18} className="modal-stat-icon" />
+                <div>
+                  <span className="modal-stat-label">Highest Rating</span>
+                  <span className="modal-stat-value">{selectedUser.highestRating ?? 'N/A'}</span>
+                </div>
+              </div>
+              <div className="modal-stat">
+                <Globe size={18} className="modal-stat-icon" />
+                <div>
+                  <span className="modal-stat-label">Global Rank</span>
+                  <span className="modal-stat-value">{selectedUser.globalRank ?? 'N/A'}</span>
+                </div>
+              </div>
+              <div className="modal-stat">
+                <MapPin size={18} className="modal-stat-icon" />
+                <div>
+                  <span className="modal-stat-label">Country Rank</span>
+                  <span className="modal-stat-value">{selectedUser.countryRank ?? 'N/A'}</span>
+                </div>
+              </div>
+              <div className="modal-stat">
+                <MapPin size={18} className="modal-stat-icon" />
+                <div>
+                  <span className="modal-stat-label">Country</span>
+                  <span className="modal-stat-value">{selectedUser.country ?? 'N/A'}</span>
+                </div>
+              </div>
+              <div className="modal-stat">
+                <Building size={18} className="modal-stat-icon" />
+                <div>
+                  <span className="modal-stat-label">Institution</span>
+                  <span className="modal-stat-value">{selectedUser.institution ?? 'N/A'}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -481,7 +533,7 @@ function App() {
 
         {/* Bulk data table preview */}
         {bulkData.length > 0 && (
-          <DataTable data={bulkData} title={`Bulk Results (${bulkData.length} users)`} />
+          <ProfileGrid data={bulkData} title={`Bulk Results (${bulkData.length} users)`} />
         )}
 
         {history.length > 0 && (
@@ -573,7 +625,7 @@ function App() {
             </div>
 
             {/* Single profile table preview */}
-            <DataTable data={[profile]} title="Profile Data Preview" />
+            <ProfileGrid data={[profile]} title="Profile Data Preview" />
           </>
         )}
       </main>
