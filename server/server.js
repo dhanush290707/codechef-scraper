@@ -4,9 +4,15 @@ const cheerio = require('cheerio');
 const cors = require('cors');
 const xlsx = require('xlsx');
 const multer = require('multer');
+const db = require('./db');
+const { router: authRouter, requireAuth, requireAdmin } = require('./auth');
 
 const app = express();
 app.use(cors({ origin: '*' }));
+app.use(express.json());
+
+// Mount auth routes
+app.use('/api/auth', authRouter);
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB max
 const jobs = new Map();
@@ -36,7 +42,6 @@ const COUNTRY_FIXES = {
 };
 
 function cleanProfileData(raw) {
-    // --- Stars: extract number from combined text like "2★1446" or "2★ 1446 (-11)" ---
     let stars = 'N/A';
     let rating = 'N/A';
     const rawStars = (raw.stars || '').toString();
@@ -49,7 +54,6 @@ function cleanProfileData(raw) {
         if (!isNaN(parsed)) stars = parsed;
     }
 
-    // --- Rating: prefer dedicated rating field, then extract from stars text ---
     const rawRating = (raw.rating || '').toString().trim();
     const ratingNum = parseInt(rawRating);
     if (!isNaN(ratingNum)) {
@@ -60,14 +64,12 @@ function cleanProfileData(raw) {
         if (!isNaN(rNum)) rating = rNum;
     }
 
-    // --- Ranks: ensure numbers ---
     const toNum = (v) => {
         if (v === 'NA' || v === 'N/A' || !v) return 'N/A';
         const n = parseInt(v.toString().replace(/,/g, ''));
         return isNaN(n) ? 'N/A' : n;
     };
 
-    // --- Country: fix duplicated demonym prefix like "IndianIndia" ---
     let country = (raw.country || 'N/A').toString().trim();
     if (country && country !== 'NA' && country !== 'N/A') {
         const lower = country.toLowerCase();
@@ -193,6 +195,7 @@ async function scrapeCodeChefProfile(username) {
     }
 }
 
+// ── Public: single profile scrape (kept open for preview) ──
 app.get('/api/codechef/:username', async (req, res) => {
     const { username } = req.params;
     if (!username) return res.status(400).json({ error: 'Username is required' });
@@ -216,7 +219,8 @@ app.get('/api/codechef/:username', async (req, res) => {
     }
 });
 
-app.get('/api/codechef/:username/excel', async (req, res) => {
+// ── Admin only: single profile Excel download ──
+app.get('/api/codechef/:username/excel', requireAuth, requireAdmin, async (req, res) => {
     const { username } = req.params;
     if (!username) return res.status(400).json({ error: 'Username is required' });
 
@@ -230,7 +234,6 @@ app.get('/api/codechef/:username/excel', async (req, res) => {
         }
 
         const wb = xlsx.utils.book_new();
-        // Capitalize keys for Excel header
         const formattedData = [{
             "Username": profileData.username,
             "Rating": profileData.rating,
@@ -256,8 +259,8 @@ app.get('/api/codechef/:username/excel', async (req, res) => {
     }
 });
 
-// Preview endpoint: returns sheet names and column headers for dynamic selection
-app.post('/api/codechef/bulk-excel/preview', upload.single('file'), async (req, res) => {
+// ── Admin only: bulk Excel preview ──
+app.post('/api/codechef/bulk-excel/preview', requireAuth, requireAdmin, upload.single('file'), async (req, res) => {
     console.log('[Bulk] Received preview file:', req.file ? req.file.originalname : null);
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
@@ -277,7 +280,8 @@ app.post('/api/codechef/bulk-excel/preview', upload.single('file'), async (req, 
     }
 });
 
-app.post('/api/codechef/bulk-excel', upload.single('file'), async (req, res) => {
+// ── Admin only: bulk Excel process ──
+app.post('/api/codechef/bulk-excel', requireAuth, requireAdmin, upload.single('file'), async (req, res) => {
     console.log('[Bulk] Received processing file:', req.file ? req.file.originalname : null);
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     
@@ -286,7 +290,6 @@ app.post('/api/codechef/bulk-excel', upload.single('file'), async (req, res) => 
         const selectedSheet = req.body?.sheetName || null;
         const selectedColumn = req.body?.usernameColumn || null;
 
-        // Determine which sheets to process
         const sheetNames = selectedSheet ? [selectedSheet] : wb.SheetNames;
         const sheetDataList = [];
         let totalUsernames = 0;
@@ -322,11 +325,10 @@ app.post('/api/codechef/bulk-excel', upload.single('file'), async (req, res) => 
             total: totalUsernames,
             processed: 0,
             sheetDataList,
-            results: [],  // will hold { sheetName, rows } entries
+            results: [],
             excelBuffer: null
         });
 
-        // Trigger background processing
         processBulkExcel(jobId);
 
         res.json({ jobId, total: totalUsernames });
@@ -360,13 +362,11 @@ async function processBulkExcel(jobId) {
                 } else {
                     profileData = await scrapeCodeChefProfile(username);
                     cache.set(username, { data: profileData, timestamp: Date.now() });
-                    // Delay 500-1000ms to avoid rate limiting
                     await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 500));
                 }
 
                 console.log('[Bulk] Scraped data for', username, ':', JSON.stringify(profileData));
 
-                // Use camelCase keys (matching scraper output) for JSON consistency
                 updatedRows.push({
                     ...row,
                     username: profileData.username,
@@ -401,7 +401,6 @@ async function processBulkExcel(jobId) {
         completedSheets.push({ sheetName: sheetData.sheetName, rows: updatedRows });
     }
 
-    // Format rows with capitalized headers for the Excel download only
     const formatRowForExcel = (row) => ({
         "Username": row.username ?? row[Object.keys(row).find(k => k.toLowerCase() === 'username')] ?? '',
         "Rating": row.rating ?? 'N/A',
@@ -424,7 +423,7 @@ async function processBulkExcel(jobId) {
         const excelBuffer = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
         job.excelBuffer = excelBuffer;
-        job.completedSheets = completedSheets; // camelCase rows for JSON preview
+        job.completedSheets = completedSheets;
         job.status = 'completed';
         console.log('[Bulk] Job', jobId, 'completed successfully');
     } catch (err) {
@@ -433,7 +432,6 @@ async function processBulkExcel(jobId) {
     }
 }
 
-// Preview endpoint: returns processed data as JSON for table preview
 app.get('/api/codechef/job/:jobId/data', (req, res) => {
     const { jobId } = req.params;
     const job = jobs.get(jobId);
@@ -443,7 +441,6 @@ app.get('/api/codechef/job/:jobId/data', (req, res) => {
         return res.status(400).json({ error: 'Job not yet completed' });
     }
 
-    // Flatten all sheets into a single array for table preview
     const rows = job.completedSheets.flatMap(s => s.rows);
     res.json({ rows, total: rows.length });
 });
@@ -499,8 +496,132 @@ app.get('/api/codechef/job/:jobId/download', (req, res) => {
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.send(job.excelBuffer);
 
-    // Free memory after download — keep completedSheets for preview but release the buffer
     job.excelBuffer = null;
+});
+
+// ═══════════════════════════════════════════════════════════
+// ── Section Management ──
+// ═══════════════════════════════════════════════════════════
+
+app.get('/api/sections', (req, res) => {
+    const sections = db.read('sections.json') || {
+        studyYears: [], academicYears: [], sectionNumbers: []
+    };
+    res.json(sections);
+});
+
+app.post('/api/sections', requireAuth, requireAdmin, (req, res) => {
+    const { sectionNumber } = req.body;
+    if (!sectionNumber || !sectionNumber.trim()) {
+        return res.status(400).json({ error: 'Section number is required' });
+    }
+
+    const sections = db.read('sections.json') || {
+        studyYears: [], academicYears: [], sectionNumbers: []
+    };
+
+    const trimmed = sectionNumber.trim();
+    if (sections.sectionNumbers.includes(trimmed)) {
+        return res.status(409).json({ error: 'Section already exists' });
+    }
+
+    sections.sectionNumbers.push(trimmed);
+    db.write('sections.json', sections);
+    res.json({ message: 'Section added', sections });
+});
+
+// ═══════════════════════════════════════════════════════════
+// ── Profile Database (Save / Read / Download) ──
+// ═══════════════════════════════════════════════════════════
+
+// Admin: Save scraped profiles to database
+app.post('/api/profiles/save', requireAuth, requireAdmin, (req, res) => {
+    const { profiles, studyYear, academicYear, sectionNumber } = req.body;
+
+    if (!profiles || !Array.isArray(profiles) || profiles.length === 0) {
+        return res.status(400).json({ error: 'Profiles array is required' });
+    }
+    if (!studyYear || !academicYear || !sectionNumber) {
+        return res.status(400).json({ error: 'Study year, academic year, and section number are required' });
+    }
+
+    const existing = db.read('profiles.json') || [];
+
+    const timestamp = new Date().toISOString();
+    const newEntries = profiles.map(p => ({
+        ...p,
+        studyYear,
+        academicYear,
+        sectionNumber,
+        savedAt: timestamp,
+        savedBy: req.user.username
+    }));
+
+    // Replace existing profiles for the same section combo, or append
+    const key = `${studyYear}|${academicYear}|${sectionNumber}`;
+    const filtered = existing.filter(e =>
+        `${e.studyYear}|${e.academicYear}|${e.sectionNumber}` !== key
+    );
+
+    const updated = [...filtered, ...newEntries];
+    db.write('profiles.json', updated);
+
+    res.json({
+        message: `Saved ${newEntries.length} profiles for ${sectionNumber} (${studyYear}, ${academicYear})`,
+        totalProfiles: updated.length
+    });
+});
+
+// Anyone authenticated: Get saved profiles (with optional filters)
+app.get('/api/profiles', requireAuth, (req, res) => {
+    const { studyYear, academicYear, sectionNumber } = req.query;
+    let profiles = db.read('profiles.json') || [];
+
+    if (studyYear) profiles = profiles.filter(p => p.studyYear === studyYear);
+    if (academicYear) profiles = profiles.filter(p => p.academicYear === academicYear);
+    if (sectionNumber) profiles = profiles.filter(p => p.sectionNumber === sectionNumber);
+
+    res.json({ profiles, total: profiles.length });
+});
+
+// Anyone authenticated: Download saved profiles as Excel
+app.get('/api/profiles/download', requireAuth, (req, res) => {
+    const { studyYear, academicYear, sectionNumber } = req.query;
+    let profiles = db.read('profiles.json') || [];
+
+    if (studyYear) profiles = profiles.filter(p => p.studyYear === studyYear);
+    if (academicYear) profiles = profiles.filter(p => p.academicYear === academicYear);
+    if (sectionNumber) profiles = profiles.filter(p => p.sectionNumber === sectionNumber);
+
+    if (profiles.length === 0) {
+        return res.status(404).json({ error: 'No profiles found for the given filters' });
+    }
+
+    const wb = xlsx.utils.book_new();
+    const formattedData = profiles.map(p => ({
+        "Username": p.username ?? 'N/A',
+        "Rating": p.rating ?? 'N/A',
+        "Stars": p.stars ?? 'N/A',
+        "Division": p.division ?? 'N/A',
+        "Global Rank": p.globalRank ?? 'N/A',
+        "Country Rank": p.countryRank ?? 'N/A',
+        "Highest Rating": p.highestRating ?? 'N/A',
+        "Country": p.country ?? 'N/A',
+        "Institution": p.institution ?? 'N/A',
+        "Study Year": p.studyYear ?? '',
+        "Academic Year": p.academicYear ?? '',
+        "Section": p.sectionNumber ?? '',
+        "Saved At": p.savedAt ?? ''
+    }));
+
+    const ws = xlsx.utils.json_to_sheet(formattedData);
+    xlsx.utils.book_append_sheet(wb, ws, "Profiles");
+    const excelBuffer = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    const filename = `codechef_profiles_${(sectionNumber || 'all').replace(/\s/g, '_')}.xlsx`;
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(excelBuffer);
 });
 
 const PORT = process.env.PORT || 5000;
