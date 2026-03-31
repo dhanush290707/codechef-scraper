@@ -46,9 +46,9 @@ function ProfileGrid({ data, title, onSaveToDb, savingToDb, sections, authAxios 
   const [saveStudyYear, setSaveStudyYear] = useState('');
   const [saveAcademicYear, setSaveAcademicYear] = useState('');
   const [saveSectionNumber, setSaveSectionNumber] = useState('');
-  const [addingSectionMode, setAddingSectionMode] = useState(false);
-  const [newSectionInput, setNewSectionInput] = useState('');
-  const [addingSectionLoading, setAddingSectionLoading] = useState(false);
+  const [addingMode, setAddingMode] = useState(null); // null | 'studyYear' | 'academicYear' | 'section'
+  const [addingInput, setAddingInput] = useState('');
+  const [addingLoading, setAddingLoading] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState('');
 
   const filtered = useMemo(() => {
@@ -107,19 +107,28 @@ function ProfileGrid({ data, title, onSaveToDb, savingToDb, sections, authAxios 
     }
   };
 
-  const handleAddSection = async () => {
-    if (!newSectionInput.trim() || !authAxios) return;
-    setAddingSectionLoading(true);
+  const toggleAddingMode = (mode) => {
+    setAddingMode(prev => prev === mode ? null : mode);
+    setAddingInput('');
+  };
+
+  const handleAddItem = async () => {
+    if (!addingInput.trim() || !authAxios || !addingMode) return;
+    setAddingLoading(true);
     try {
-      await authAxios.post(`${API_BASE}/api/sections`, { sectionNumber: newSectionInput.trim() });
-      setNewSectionInput('');
-      setAddingSectionMode(false);
-      // Refresh sections (parent will re-fetch)
+      const body = {};
+      if (addingMode === 'studyYear') body.studyYear = addingInput.trim();
+      else if (addingMode === 'academicYear') body.academicYear = addingInput.trim();
+      else if (addingMode === 'section') body.sectionNumber = addingInput.trim();
+
+      await authAxios.post(`${API_BASE}/api/sections`, body);
+      setAddingInput('');
+      setAddingMode(null);
       if (window.__refreshSections) window.__refreshSections();
     } catch (err) {
-      alert(err.response?.data?.error || 'Failed to add section');
+      alert(err.response?.data?.error || 'Failed to add item');
     } finally {
-      setAddingSectionLoading(false);
+      setAddingLoading(false);
     }
   };
 
@@ -206,27 +215,45 @@ function ProfileGrid({ data, title, onSaveToDb, savingToDb, sections, authAxios 
           <div className="save-selectors">
             <div className="selector-group">
               <label>Study Year</label>
-              <div className="select-wrapper">
-                <select value={saveStudyYear} onChange={e => setSaveStudyYear(e.target.value)}>
-                  <option value="">Select...</option>
-                  {(sections?.studyYears || []).map(y => (
-                    <option key={y} value={y}>{y}</option>
-                  ))}
-                </select>
-                <ChevronDown size={14} className="select-chevron" />
+              <div className="section-add-row">
+                <div className="select-wrapper" style={{ flex: 1 }}>
+                  <select value={saveStudyYear} onChange={e => setSaveStudyYear(e.target.value)}>
+                    <option value="">Select...</option>
+                    {(sections?.studyYears || []).map(y => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                  <ChevronDown size={14} className="select-chevron" />
+                </div>
+                <button
+                  className={`add-section-toggle ${addingMode === 'studyYear' ? 'active' : ''}`}
+                  onClick={() => toggleAddingMode('studyYear')}
+                  title="Add new study year"
+                >
+                  <Plus size={14} />
+                </button>
               </div>
             </div>
 
             <div className="selector-group">
               <label>Academic Year</label>
-              <div className="select-wrapper">
-                <select value={saveAcademicYear} onChange={e => setSaveAcademicYear(e.target.value)}>
-                  <option value="">Select...</option>
-                  {(sections?.academicYears || []).map(y => (
-                    <option key={y} value={y}>{y}</option>
-                  ))}
-                </select>
-                <ChevronDown size={14} className="select-chevron" />
+              <div className="section-add-row">
+                <div className="select-wrapper" style={{ flex: 1 }}>
+                  <select value={saveAcademicYear} onChange={e => setSaveAcademicYear(e.target.value)}>
+                    <option value="">Select...</option>
+                    {(sections?.academicYears || []).map(y => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                  <ChevronDown size={14} className="select-chevron" />
+                </div>
+                <button
+                  className={`add-section-toggle ${addingMode === 'academicYear' ? 'active' : ''}`}
+                  onClick={() => toggleAddingMode('academicYear')}
+                  title="Add new academic year"
+                >
+                  <Plus size={14} />
+                </button>
               </div>
             </div>
 
@@ -243,8 +270,8 @@ function ProfileGrid({ data, title, onSaveToDb, savingToDb, sections, authAxios 
                   <ChevronDown size={14} className="select-chevron" />
                 </div>
                 <button
-                  className="add-section-toggle"
-                  onClick={() => setAddingSectionMode(!addingSectionMode)}
+                  className={`add-section-toggle ${addingMode === 'section' ? 'active' : ''}`}
+                  onClick={() => toggleAddingMode('section')}
                   title="Add new section"
                 >
                   <Plus size={14} />
@@ -253,19 +280,24 @@ function ProfileGrid({ data, title, onSaveToDb, savingToDb, sections, authAxios 
             </div>
           </div>
 
-          {addingSectionMode && (
+          {addingMode && (
             <div className="add-section-form fade-in">
               <input
                 type="text"
-                placeholder="e.g. Section 4"
-                value={newSectionInput}
-                onChange={e => setNewSectionInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleAddSection()}
+                placeholder={
+                  addingMode === 'studyYear' ? 'e.g. 5th Year' :
+                  addingMode === 'academicYear' ? 'e.g. 2027-28' :
+                  'e.g. Section 4'
+                }
+                value={addingInput}
+                onChange={e => setAddingInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleAddItem()}
+                autoFocus
               />
-              <button onClick={handleAddSection} disabled={addingSectionLoading || !newSectionInput.trim()}>
-                {addingSectionLoading ? <div className="spinner-small"></div> : 'Add'}
+              <button onClick={handleAddItem} disabled={addingLoading || !addingInput.trim()}>
+                {addingLoading ? <div className="spinner-small"></div> : 'Add'}
               </button>
-              <button className="cancel-btn" onClick={() => { setAddingSectionMode(false); setNewSectionInput(''); }}>
+              <button className="cancel-btn" onClick={() => { setAddingMode(null); setAddingInput(''); }}>
                 Cancel
               </button>
             </div>

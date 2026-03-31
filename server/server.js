@@ -511,23 +511,41 @@ app.get('/api/sections', (req, res) => {
 });
 
 app.post('/api/sections', requireAuth, requireAdmin, (req, res) => {
-    const { sectionNumber } = req.body;
-    if (!sectionNumber || !sectionNumber.trim()) {
-        return res.status(400).json({ error: 'Section number is required' });
-    }
+    const { sectionNumber, academicYear, studyYear } = req.body;
 
     const sections = db.read('sections.json') || {
         studyYears: [], academicYears: [], sectionNumbers: []
     };
 
-    const trimmed = sectionNumber.trim();
-    if (sections.sectionNumbers.includes(trimmed)) {
-        return res.status(409).json({ error: 'Section already exists' });
+    let added = null;
+
+    if (studyYear && studyYear.trim()) {
+        const trimmed = studyYear.trim();
+        if (sections.studyYears.includes(trimmed)) {
+            return res.status(409).json({ error: 'Study year already exists' });
+        }
+        sections.studyYears.push(trimmed);
+        added = `Study year "${trimmed}"`;
+    } else if (academicYear && academicYear.trim()) {
+        const trimmed = academicYear.trim();
+        if (sections.academicYears.includes(trimmed)) {
+            return res.status(409).json({ error: 'Academic year already exists' });
+        }
+        sections.academicYears.push(trimmed);
+        added = `Academic year "${trimmed}"`;
+    } else if (sectionNumber && sectionNumber.trim()) {
+        const trimmed = sectionNumber.trim();
+        if (sections.sectionNumbers.includes(trimmed)) {
+            return res.status(409).json({ error: 'Section already exists' });
+        }
+        sections.sectionNumbers.push(trimmed);
+        added = `Section "${trimmed}"`;
+    } else {
+        return res.status(400).json({ error: 'A value to add is required' });
     }
 
-    sections.sectionNumbers.push(trimmed);
     db.write('sections.json', sections);
-    res.json({ message: 'Section added', sections });
+    res.json({ message: `${added} added successfully`, sections });
 });
 
 // ═══════════════════════════════════════════════════════════

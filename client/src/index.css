@@ -1278,6 +1278,70 @@ body.dark .success-toast {
   color: #cbd5e1;
 }
 
+.login-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+.login-toggle span {
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+.login-toggle-btn {
+  background: none;
+  border: none;
+  color: #60a5fa;
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.2s;
+}
+
+.login-toggle-btn:hover {
+  color: #93c5fd;
+  text-decoration: underline;
+}
+
+.login-creds-section {
+  text-align: center;
+}
+
+.login-creds-section p {
+  font-size: 0.7rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.login-register-note {
+  text-align: center;
+  padding: 0.75rem 1rem;
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.15);
+  border-radius: 10px;
+}
+
+.login-register-note p {
+  font-size: 0.78rem;
+  color: #94a3b8;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+  margin-bottom: 0;
+}
+
+.login-register-note strong {
+  color: #60a5fa;
+}
+
 /* ══════════════════════════════════════════════════════════ */
 /* ── SAVE TO DATABASE SECTION ──                           */
 /* ══════════════════════════════════════════════════════════ */
@@ -1341,6 +1405,13 @@ body.dark .success-toast {
   background: var(--primary);
   color: white;
   border-color: var(--primary);
+}
+
+.add-section-toggle.active {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
 }
 
 .add-section-form {

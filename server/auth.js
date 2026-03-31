@@ -80,6 +80,53 @@ router.post('/login', (req, res) => {
     });
 });
 
+// --- Register (Viewer only) ---
+router.post('/register', (req, res) => {
+    const { username, password, displayName } = req.body;
+    if (!username || !password) {
+        return res.status(400).json({ error: 'Username and password are required' });
+    }
+    if (username.trim().length < 3) {
+        return res.status(400).json({ error: 'Username must be at least 3 characters' });
+    }
+    if (password.length < 4) {
+        return res.status(400).json({ error: 'Password must be at least 4 characters' });
+    }
+
+    const users = db.read('users.json') || [];
+
+    if (users.find(u => u.username.toLowerCase() === username.trim().toLowerCase())) {
+        return res.status(409).json({ error: 'Username already exists' });
+    }
+
+    const newUser = {
+        id: users.length > 0 ? Math.max(...users.map(u => u.id)) + 1 : 1,
+        username: username.trim(),
+        password: bcrypt.hashSync(password, 10),
+        role: 'viewer',
+        displayName: (displayName || username).trim()
+    };
+
+    users.push(newUser);
+    db.write('users.json', users);
+
+    const token = jwt.sign(
+        { id: newUser.id, username: newUser.username, role: newUser.role },
+        JWT_SECRET,
+        { expiresIn: JWT_EXPIRES_IN }
+    );
+
+    res.status(201).json({
+        token,
+        user: {
+            id: newUser.id,
+            username: newUser.username,
+            role: newUser.role,
+            displayName: newUser.displayName
+        }
+    });
+});
+
 // --- Get Current User ---
 router.get('/me', requireAuth, (req, res) => {
     res.json({ user: req.user });

@@ -3,16 +3,19 @@
     "1st Year",
     "2nd Year",
     "3rd Year",
-    "4th Year"
+    "4th Year",
+    "5th Year"
   ],
   "academicYears": [
     "2024-25",
     "2025-26",
-    "2026-27"
+    "2026-27",
+    "2027-28"
   ],
   "sectionNumbers": [
     "Section 1",
     "Section 2",
-    "Section 3"
+    "Section 3",
+    "S4"
   ]
 }

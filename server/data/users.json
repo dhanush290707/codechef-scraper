@@ -12,5 +12,12 @@
     "password": "$2b$10$ze1IZCjyj8NLLurkRL2wuu2.pO.Hd3FqJ75lwg1jlkvlxSPs6R4ba",
     "role": "viewer",
     "displayName": "Viewer"
+  },
+  {
+    "id": 3,
+    "username": "teststudent",
+    "password": "$2b$10$7N6lic1MpKsxaU0o5dzpYOd2M59eYTfYd7a7gDwxZfOFu0khD.3xa",
+    "role": "viewer",
+    "displayName": "Test Student"
   }
 ]

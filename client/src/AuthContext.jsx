@@ -46,6 +46,15 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
+  const register = async (username, password, displayName) => {
+    const res = await axios.post(`${API_BASE}/api/auth/register`, { username, password, displayName });
+    const { token: newToken, user: userData } = res.data;
+    localStorage.setItem('cc_token', newToken);
+    setToken(newToken);
+    setUser(userData);
+    return userData;
+  };
+
   // Axios helper with auth header
   const authAxios = axios.create();
   authAxios.interceptors.request.use(config => {
@@ -55,7 +64,7 @@ export function AuthProvider({ children }) {
   });
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, logout, authAxios }}>
+    <AuthContext.Provider value={{ user, token, loading, login, register, logout, authAxios }}>
       {children}
     </AuthContext.Provider>
   );
